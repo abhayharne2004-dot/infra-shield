@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InfraShield · Nagpur Infrastructure Risk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Exo:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --bg:#07090f;
+  --bg-2:#0b1018;
+  --panel:rgba(15,22,34,.72);
+  --panel-solid:#111826;
+  --border:rgba(148,163,184,.14);
+  --border-strong:rgba(148,163,184,.26);
+  --text:#e7edf5;
+  --muted:#8ba0b8;
+  --muted-2:#5d7188;
+  --accent:#2dd4bf;
+  --accent-2:#22d3ee;
+  --accent-soft:rgba(45,212,191,.14);
+  --ok:#34d399; --warn:#fbbf24; --danger:#f87171;
+  --mono:'Roboto Mono',ui-monospace,monospace;
+  --sans:'Exo',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+/* ── ambient animated background ── */
+.bg-grid{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(1200px 700px at 78% -10%, rgba(45,212,191,.10), transparent 60%),
+    radial-gradient(900px 600px at 12% 108%, rgba(34,211,238,.07), transparent 55%),
+    linear-gradient(rgba(148,163,184,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,.045) 1px, transparent 1px);
+  background-size:auto,auto,54px 54px,54px 54px;
+  mask-image:linear-gradient(180deg,rgba(0,0,0,.9),rgba(0,0,0,.4));
+}
+.bg-grid::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(60% 40% at 50% 0%, rgba(45,212,191,.05), transparent);}
+.scanline{position:fixed;left:0;right:0;height:2px;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  opacity:.5;filter:blur(.5px);
+  animation:scan 9s linear infinite;
+  mix-blend-mode:screen;}
+@keyframes scan{0%{top:-2%}100%{top:102%}}
+
+/* ── layout ── */
+#map{position:absolute;inset:0 400px 0 0;z-index:2;background:#0a0f16}
+.leaflet-container{background:#0a0f16;font-family:var(--sans)}
+.leaflet-tile{filter:invert(92%) hue-rotate(180deg) saturate(.35) brightness(.85) contrast(.92)}
+#panel{
+  position:absolute;top:0;right:0;bottom:0;width:400px;z-index:3;overflow-y:auto;
+  background:var(--panel);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border-left:1px solid var(--border);
+  padding:22px 22px 24px;display:flex;flex-direction:column;gap:20px;
+  scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent;
+}
+#panel::-webkit-scrollbar{width:6px}
+#panel::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:3px}
+
+/* ── brand ── */
+.brand{display:flex;align-items:center;gap:12px}
+.logo{
+  width:42px;height:42px;border-radius:12px;position:relative;flex:0 0 auto;
+  background:linear-gradient(135deg,rgba(45,212,191,.22),rgba(34,211,238,.08));
+  border:1px solid var(--border-strong);
+  display:grid;place-items:center;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 8px 26px -12px rgba(45,212,191,.5);
+}
+.logo svg{width:24px;height:24px;stroke:var(--accent);filter:drop-shadow(0 0 6px rgba(45,212,191,.55))}
+.brand h1{font-size:19px;font-weight:700;letter-spacing:.4px;line-height:1.1}
+.brand h1 em{font-style:normal;color:var(--accent)}
+.brand .sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.14em;margin-top:2px;text-transform:uppercase}
+.live{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--accent)}
+.live .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.8s ease-in-out infinite;box-shadow:0 0 8px var(--accent)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+
+/* ── section headings ── */
+.h{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);font-family:var(--mono)}
+.h::before{content:"";width:16px;height:1px;background:linear-gradient(90deg,var(--accent),transparent)}
+
+/* ── stat row ── */
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.stat{
+  background:var(--bg-2);border:1px solid var(--border);border-radius:12px;
+  padding:12px 12px 10px;position:relative;overflow:hidden;
+  transition:border-color .25s, transform .25s;
+}
+.stat:hover{border-color:var(--border-strong);transform:translateY(-2px)}
+.stat .k{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);letter-spacing:.1em;text-transform:uppercase}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:500;margin-top:5px;color:var(--text);font-variant-numeric:tabular-nums}
+.stat .v small{font-size:11px;color:var(--muted)}
+.stat.hl .v{color:var(--accent)}
+
+/* ── risk list ── */
+#ars-list{list-style:none;display:flex;flex-direction:column;gap:7px}
+#ars-list li,.edge-row{
+  background:linear-gradient(180deg,rgba(22,31,47,.6),rgba(15,22,34,.5));
+  border:1px solid var(--border);border-radius:10px;padding:9px 11px;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  transition:border-color .2s,transform .2s,box-shadow .2s;
+  animation:rise .5s both;
+}
+#ars-list li:hover{border-color:var(--accent);transform:translateX(3px);box-shadow:0 6px 20px -12px rgba(45,212,191,.5)}
+#ars-list li.active{border-color:var(--accent);background:var(--accent-soft)}
+#ars-list .name{font-size:12.5px;font-weight:500;color:var(--text);display:flex;align-items:center;gap:8px}
+#ars-list .name .glyph{width:18px;height:18px;border-radius:5px;background:var(--bg);display:grid;place-items:center;font-size:10px}
+#ars-list .fade{color:var(--muted-2);font-family:var(--mono);font-size:9.5px;margin-left:6px}
+.badge{margin-left:auto;font-family:var(--mono);font-weight:600;font-size:12.5px}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── ARS color chips ── */
+.ars-chip{padding:2px 7px;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:600}
+.ars-low{color:var(--ok);background:rgba(52,211,153,.12)}
+.ars-mid{color:var(--warn);background:rgba(251,191,36,.12)}
+.ars-high{color:var(--danger);background:rgba(248,113,113,.12)}
+
+/* ── detail ── */
+#detail{background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:14px;
+  display:none;animation:rise .3s both}
+#detail.show{display:block}
+#detail .row{display:flex;justify-content:space-between;padding:6px 0;font-size:12.5px;border-bottom:1px dashed var(--border)}
+#detail .row:last-of-type{border-bottom:none}
+#detail .row span:last-child{font-family:var(--mono);color:var(--text)}
+#detail .row b{font-weight:600}
+#detail .row b:last-child{color:var(--accent)}
+
+/* ── buttons ── */
+button{
+  all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font-family:var(--sans);font-weight:600;font-size:12.5px;color:#02121c;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  border-radius:10px;padding:10px 14px;
+  box-shadow:0 8px 24px -10px rgba(45,212,191,.65),inset 0 1px 0 rgba(255,255,255,.35);
+  transition:transform .18s,box-shadow .18s,filter .18s;
+}
+button:hover{transform:translateY(-1px);box-shadow:0 12px 30px -10px rgba(45,212,191,.75)}
+button:active{transform:translateY(0) scale(.98)}
+button.ghost{background:transparent;color:var(--text);border:1px solid var(--border-strong);box-shadow:none}
+button.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.hint{color:var(--muted-2);font-size:11px;margin-top:7px;font-family:var(--mono)}
+
+/* ── cascade table ── */
+.table-wrap{overflow:hidden;border:1px solid var(--border);border-radius:12px}
+#cascade-table{width:100%;border-collapse:collapse;font-size:11.5px}
+#cascade-table th{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);text-align:left;padding:9px 10px;background:var(--bg-2);border-bottom:1px solid var(--border)}
+#cascade-table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);color:var(--muted)}
+#cascade-table tr:last-child td{border-bottom:none}
+#cascade-table td:first-child{color:var(--text)}
+#cascade-table td:nth-child(2){color:var(--muted)}
+#cascade-table td:nth-child(3){color:var(--text)}
+#cascade-table td:nth-child(4){color:var(--accent)}
+#cascade-table tr{transition:background .15s}
+#cascade-table tr:hover{background:rgba(45,212,191,.04)}
+
+/* ── status bar ── */
+.statusbar{position:absolute;left:0;right:400px;bottom:0;z-index:4;pointer-events:none;
+  display:flex;align-items:center;gap:14px;padding:9px 16px;
+  font-family:var(--mono);font-size:10px;color:var(--muted-2);letter-spacing:.05em;
+  background:linear-gradient(180deg,transparent,rgba(7,9,15,.85));}
+.statusbar .seg{display:inline-flex;align-items:center;gap:6px}
+.statusbar .tk{color:var(--accent);overflow:hidden;white-space:nowrap}
+.statusbar .tk span{display:inline-block;animation:tick 14s linear infinite}
+@keyframes tick{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
+
+/* ── legend ── */
+#legend{position:absolute;left:16px;bottom:40px;z-index:1000;pointer-events:none;
+  background:rgba(15,22,34,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid var(--border);border-radius:12px;padding:11px 13px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+#legend .row{display:flex;align-items:center;gap:9px;margin:3.5px 0}
+.swatch{width:28px;height:5px;border-radius:3px;display:inline-block;box-shadow:0 0 8px rgba(255,255,255,.08)}
+.legend-pulse{width:9px;height:9px;border-radius:50%;background:var(--danger);animation:pulse 2s infinite;display:inline-block}
+
+/* ── leaflet polish ── */
+.leaflet-popup-content-wrapper{background:#111826;color:var(--text);border:1px solid var(--border);border-radius:12px;font-family:var(--sans);box-shadow:0 18px 50px -20px rgba(0,0,0,.7)}
+.leaflet-popup-tip{background:#111826;}
+.leaflet-popup-content{font-size:12.5px;line-height:1.6}
+.leaflet-popup-content b{color:var(--accent)}
+.leaflet-control-zoom a{background:#111826!important;color:var(--text)!important;border-color:var(--border)!important}
+.leaflet-container a.leaflet-popup-close-button{color:var(--muted)!important}
+
+/* ── motion reduce ── */
+@media (prefers-reduced-motion:reduce){
+  .scanline,.live .dot,.statusbar .tk span,.legend-pulse{animation:none}
+  #ars-list li{animation:none}
+  .stat{transition:none}
+  #intro{display:none!important}
+}
+
+/* ── cinematic 3D intro overlay ── */
+#intro{
+  position:fixed;inset:0;z-index:50;background:#05070c;
+  display:grid;place-items:center;overflow:hidden;cursor:pointer;
+  transition:opacity .7s ease,visibility .7s ease;
+}
+#intro.hide{opacity:0;visibility:hidden}
+#intro canvas{position:absolute;inset:0;width:100%;height:100%}
+#intro .intro-copy{position:relative;z-index:2;text-align:center;padding:24px}
+#intro .intro-mark{font-family:var(--sans);font-weight:800;font-size:clamp(30px,6vw,64px);
+  letter-spacing:.06em;color:var(--text);
+  background:linear-gradient(120deg,#e7edf5,#9be7dd 60%,#22d3ee);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  text-shadow:0 0 40px rgba(45,212,191,.25);line-height:1.08;}
+#intro .intro-sub{margin-top:14px;font-family:var(--mono);font-size:clamp(11px,1.6vw,15px);
+  letter-spacing:.4em;text-transform:uppercase;color:var(--muted)}
+#intro .intro-skip{position:absolute;bottom:26px;left:0;right:0;text-align:center;z-index:3;
+  font-family:var(--mono);font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--muted-2)}
+#intro .intro-bar{position:relative;z-index:2;margin-top:26px;width:200px;height:2px;
+  background:rgba(148,163,184,.15);border-radius:2px;overflow:hidden;margin-left:auto;margin-right:auto}
+#intro .intro-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  box-shadow:0 0 12px var(--accent);animation:load 3s ease forwards}
+@keyframes load{to{width:100%}}
+/* CSS-only auto-dismiss: after the load bar finishes + fade, hide the intro even if JS fails */
+#intro{animation:intro-exit 4s 1 forwards}
+@keyframes intro-exit{
+  0%,85%{opacity:1;visibility:visible}
+  100%{opacity:0;visibility:hidden;display:none}
+}
+
+/* ── responsive ── */
+@media (max-width:920px){
+  #map{inset:0 0 46vh 0}
+  #panel{inset:auto 0 0 0;width:100%;height:46vh;border-left:none;border-top:1px solid var(--border)}
+  .statusbar{right:0;bottom:46vh}
+}
+</style>
+</head>
+<body>
+<div id="intro" aria-label="InfraShield intro">
+  <canvas id="intro-canvas"></canvas>
+  <div class="intro-copy">
+    <div class="intro-mark">INFRA&nbsp;SHIELD</div>
+    <div class="intro-sub">Nagpur · Resilience Grid</div>
+    <div class="intro-bar"><i></i></div>
+  </div>
+  <div class="intro-skip">enter dashboard</div>
+</div>
+
+<div class="bg-grid"></div>
+<div class="scanline"></div>
+
+<div id="map"></div>
+<div id="legend">
+  <div class="row"><span class="swatch" style="background:#34d399"></span> Low risk</div>
+  <div class="row"><span class="swatch" style="background:#fbbf24"></span> Moderate</div>
+  <div class="row"><span class="swatch" style="background:#f87171"></span> High risk</div>
+  <div class="row"><span class="legend-pulse" style="background:#f87171"></span> Hospital</div>
+</div>
+<div class="statusbar">
+  <span class="seg">● ONLINE</span>
+  <span class="seg">NAGPUR CORRIDOR</span>
+  <span class="seg tk"><span>INFRASTRUCTURE RESILIENCE ANALYSIS · ASSET RISK SCORING · CASCADE FAILURE SIMULATION · POPULATION-WEIGHTED IMPACT ·</span></span>
+  <span class="seg" style="margin-left:auto" id="clock">--:--:-- IST</span>
+</div>
+
+<div id="panel">
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12 L9 6 L15 12 L21 6"/><path d="M3 18 L9 12 L15 18 L21 12"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Infra<em>Shield</em></h1>
+      <div class="sub">Nagpur · Resilience Grid</div>
+      <span class="live"><span class="dot"></span>LIVE ANALYSIS</span>
+    </div>
+  </div>
+
+  <div>
+    <div class="h">Network</div>
+    <div class="stats" style="margin-top:10px">
+      <div class="stat"><div class="k">Nodes</div><div class="v" data-count id="nodes">0</div></div>
+      <div class="stat"><div class="k">Edges</div><div class="v" data-count id="edges">0</div></div>
+      <div class="stat hl"><div class="k">Rain 7d</div><div class="v" id="rain">–</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="h">Risk Rankings</div>
+    <ul id="ars-list" style="margin-top:10px"></ul>
+  </div>
+
+  <div id="detail"></div>
+
+  <div>
+    <div class="h">Cascade Impact · top failures</div>
+    <div class="table-wrap" style="margin-top:10px">
+      <table id="cascade-table">
+        <thead><tr><th>Asset</th><th>ARS</th><th>CI</th><th>Affected / delay</th></tr></thead>
+        <tbody id="cascade-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div>
+    <button id="reset-view" style="width:100%">Center map</button>
+  </div>
+</div>
+
+<script>
+const map = L.map('map',{zoomControl:true,attributionControl:false}).setView([21.1475,79.09],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+let geojsonLayer=null,selected=null;
+
+function arsClass(ars){
+  if(ars>=0.7)return 'ars-high';
+  if(ars>=0.35)return 'ars-mid';
+  return 'ars-low';
+}
+function colorFor(ars){
+  if(ars>=0.7)return '#f87171';
+  if(ars>=0.35)return '#fbbf24';
+  return '#34d399';
+}
+// count-up animation
+function countUp(el,target,dur=900){
+  const start=performance.now();
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce){el.textContent=target;return}
+  function f(now){
+    const p=Math.min((now-start)/dur,1);
+    const eased=1-Math.pow(1-p,3);
+    el.textContent=Math.round(target*eased).toLocaleString();
+    if(p<1)requestAnimationFrame(f);
+  }
+  requestAnimationFrame(f);
+}
+
+document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
+
+fetch('/api/data')
+  .then(r=>r.json())
+  .then(data=>{
+    const n=document.getElementById('nodes'),e=document.getElementById('edges');
+    countUp(n,data.stats.nodes);countUp(e,data.stats.edges);
+    const mx=Math.max(...data.hazard.map(h=>h.max_rain_mm));
+    document.getElementById('rain').textContent=mx?mx.toFixed(1)+' mm':'–';
+
+    const list=document.getElementById('ars-list');
+    data.ars.slice(0,14).forEach((a,i)=>{
+      const li=document.createElement('li');
+      li.style.animationDelay=(i*0.05)+'s';
+      const type=a.edge_type==='bridge'?'BR':'RD';
+      const nm=(a.name||a.edge_type).slice(0,22);
+      li.innerHTML=`<span class="name"><span class="glyph">${type}</span>${nm}<span class="fade">#${a.u}-${a.v}</span></span><span class="badge ars-chip ${arsClass(a.ars)}">${a.ars}</span>`;
+      li.addEventListener('click',()=>selectEdge(a,data));
+      list.appendChild(li);
+    });
+
+    const body=document.getElementById('cascade-body');
+    data.cascade.forEach((c,i)=>{
+      const tr=document.createElement('tr');
+      tr.style.animation=`rise .4s ${i*0.06}s both`;
+      tr.innerHTML=`<td>${c.edge[0]}–${c.edge[1]}</td><td>${c.ars}</td><td>${c.cascade_impact}</td><td>${(+c.affected_population/1e6).toFixed(2)}M / ${c.avg_delay_s}s</td>`;
+      body.appendChild(tr);
+    });
+
+    geojsonLayer=L.geoJSON(data.geojson,{
+      style:f=>({color:colorFor(f.properties.ars),weight:f.properties.edge_type==='bridge'?5:2.4,opacity:.9}),
+      onEachFeature:(f,layer)=>{
+        layer.bindPopup(`<b>${f.properties.name||f.properties.edge_type}</b><br>ARS ${f.properties.ars} · H ${f.properties.hazard} · V ${f.properties.vulnerability} · C ${f.properties.criticality}<br>${(f.properties.length_m??0).toFixed(0)} m`);
+      }
+    }).addTo(map);
+    // fade in roads
+    setTimeout(()=>{document.querySelectorAll('#map path.leaflet-interactive').forEach(p=>{p.style.opacity=0;p.style.transition='opacity .8s ease'});requestAnimationFrame(()=>document.querySelectorAll('#map path.leaflet-interactive').forEach(p=>p.style.opacity=1))},100);
+
+    data.geojson.features.filter(f=>f.geometry.type==='Point').forEach(f=>{
+      const [lon,lat]=f.geometry.coordinates;
+      L.circleMarker([lat,lon],{radius:7,color:'#fff',weight:1.6,fillColor:'#f87171',fillOpacity:.95}).addTo(map)
+        .bindPopup(`<b>${f.properties.name}</b><br>${f.properties.node_type}`);
+    });
+    map.fitBounds(geojsonLayer.getBounds(),{padding:[24,24]});
+  })
+  .catch(err=>console.error('api/data failed',err));
+
+document.getElementById('reset-view').addEventListener('click',()=>{
+  if(geojsonLayer)map.fitBounds(geojsonLayer.getBounds(),{padding:[24,24]});
+  else map.setView([21.1475,79.09],13);
+});
+
+function selectEdge(a,data){
+  document.querySelectorAll('#ars-list li').forEach(l=>l.classList.remove('active'));
+  // mark
+  const clickEvt=new CustomEvent('edge-select',{detail:a});
+  document.querySelectorAll('#ars-list li').forEach((l,i)=>{if(i===data.ars.indexOf(a))l.classList.add('active')});
+  const detail=document.getElementById('detail');
+  detail.classList.add('show');
+  detail.innerHTML=`
+    <div class="row"><b>${a.name||a.edge_type}</b><span>#${a.u}-${a.v}</span></div>
+    <div class="row"><span>Hazard</span><span>${a.hazard}</span></div>
+    <div class="row"><span>Vulnerability</span><span>${a.vulnerability}</span></div>
+    <div class="row"><span>Criticality</span><span>${a.criticality}</span></div>
+    <div class="row"><b>ARS</b><b>${a.ars}</b></div>
+  `;
+  const btn=document.createElement('button');
+  btn.textContent='⚡ Run cascade on this edge';
+  btn.style.width='100%';btn.style.marginTop='12px';
+  btn.addEventListener('click',()=>{
+    btn.textContent='Simulating…';btn.disabled=true;
+    fetch(`/api/simulate?u=${a.u}&v=${a.v}`)
+      .then(r=>r.json())
+      .then(c=>{
+        btn.remove();
+        detail.insertAdjacentHTML('beforeend',
+          `<div class="row"><span>Affected nodes</span><span>${c.affected_nodes}</span></div>
+           <div class="row"><span>Affected population</span><span>${(+c.affected_population/1e6).toFixed(2)}M</span></div>
+           <div class="row"><span>Avg delay</span><span>${c.avg_delay_s}s</span></div>
+           <div class="row"><b>Cascade impact</b><b>${c.cascade_impact}</b></div>
+           <div class="row"><b>Priority</b><b>${c.priority_score}</b></div>`);
+      })
+      .catch(err=>{btn.textContent='Failed';btn.disabled=false});
+  });
+  detail.appendChild(btn);
+  map.fitBounds([[a.mid_lat,a.mid_lon-0.002],[a.mid_lat,a.mid_lon+0.002]]);
+}
+console.log('InfraShield dashboard loaded');
+
+(() => {
+  const intro=document.getElementById('intro');
+  if(!intro || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas=document.getElementById('intro-canvas');
+  let renderer,scene,camera,points,lines,gs;
+  const NODES=[[21.1492,79.0983],[21.1413,79.0804],[21.1413,79.0802],[21.1412,79.0802],[21.1411,79.0804],[21.1449,79.0897],[21.1435,79.0897],[21.1444,79.0957],[21.1444,79.0958],[21.1458,79.0877],[21.1535,79.0872],[21.1535,79.0874],[21.1509,79.0981],[21.1518,79.0980],[21.1411,79.0806],[21.1414,79.0805],[21.1413,79.0806],[21.1410,79.0804],[21.1451,79.0883],[21.1451,79.0880],[21.1428,79.0870],[21.1418,79.0835],[21.1446,79.0829],[21.1432,79.0849],[21.1444,79.0842],[21.1445,79.0874],[21.1409,79.0828],[21.1410,79.0838],[21.1412,79.0826],[21.1430,79.0871],[21.1447,79.0920],[21.1447,79.0917],[21.1451,79.0889],[21.1450,79.0957],[21.1426,79.0965],[21.1426,79.0999],[21.1434,79.0958],[21.1445,79.0957],[21.1445,79.0958],[21.1434,79.0958],[21.1473,79.0810],[21.1499,79.0801],[21.1464,79.0840],[21.1463,79.0862],[21.1468,79.0842],[21.1459,79.0824],[21.1457,79.0830],[21.1455,79.0882],[21.1519,79.0806],[21.1535,79.0884],[21.1531,79.0829],[21.1490,79.0902],[21.1469,79.0899],[21.1513,79.0936],[21.1503,79.0918],[21.1506,79.0946],[21.1507,79.0919],[21.1508,79.0918],[21.1469,79.0898],[21.1482,79.0962],[21.1499,79.0987],[21.1519,79.0906],[21.1527,79.0941],[21.1535,79.0914],[21.1518,79.0912],[21.1532,79.0914],[21.1524,79.0906],[21.1531,79.0960],[21.1540,79.0963],[21.1527,79.0958],[21.1520,79.0980],[21.1529,79.0991],[21.1436,79.0808],[21.1422,79.0821],[21.1434,79.0810],[21.1443,79.0807],[21.1434,79.0813],[21.1435,79.0810],[21.1413,79.0799],[21.1416,79.0803],[21.1449,79.0807],[21.1443,79.0807],[21.1436,79.0813],[21.1435,79.0811],[21.1435,79.0810],[21.1431,79.0809],[21.1432,79.0813],[21.1451,79.0887],[21.1445,79.0847],[21.1426,79.0863],[21.1436,79.0876],[21.1413,79.0825],[21.1409,79.0827],[21.1418,79.0836],[21.1441,79.0831],[21.1420,79.0842],[21.1442,79.0836],[21.1421,79.0847],[21.1425,79.0859],[21.1450,79.0860],[21.1437,79.0860],[21.1449,79.0860],[21.1443,79.0880],[21.1432,79.0859],[21.1432,79.0872],[21.1439,79.0824],[21.1441,79.0830],[21.1447,79.0853],[21.1443,79.0853],[21.1443,79.0838],[21.1450,79.0861],[21.1452,79.0877],[21.1418,79.0823],[21.1432,79.0845],[21.1440,79.0829],[21.1443,79.0860],[21.1403,79.0829],[21.1406,79.0829],[21.1408,79.0858],[21.1410,79.0847],[21.1398,79.0855],[21.1419,79.0839],[21.1408,79.0847],[21.1422,79.0849],[21.1436,79.0872],[21.1427,79.0865],[21.1432,79.0865],[21.1433,79.0860],[21.1433,79.0852],[21.1436,79.0865],[21.1437,79.0863],[21.1445,79.0865],[21.1448,79.0865],[21.1452,79.0883],[21.1406,79.0828],[21.1414,79.0826],[21.1402,79.0826],[21.1403,79.0829],[21.1399,79.0830],[21.1413,79.0827],[21.1431,79.0874],[21.1433,79.0873],[21.1430,79.0885],[21.1431,79.0878],[21.1429,79.0878],[21.1429,79.0885],[21.1429,79.0871],[21.1425,79.0863],[21.1420,79.0849],[21.1418,79.0840],[21.1415,79.0829],[21.1418,79.0823],[21.1434,79.0887],[21.1417,79.0848],[21.1415,79.0860],[21.1422,79.0850],[21.1449,79.0856],[21.1415,79.0832],[21.1406,79.0834],[21.1403,79.0857]];
+  try{
+    renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.setSize(innerWidth,innerHeight);
+    scene=new THREE.Scene();
+    camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,100);
+    camera.position.z=6;
+    const cxs=NODES.map(p=>(p[0]-21.14)*620);
+    const cys=NODES.map(p=>(p[1]-79.08)*620);
+    const cx=cxs.reduce((a,b)=>a+b,0)/cxs.length;
+    const cy=cys.reduce((a,b)=>a+b,0)/cys.length;
+    const pos=cxs.map((x,i)=>[x-cx,0.22*(cys[i]-cy),cy-cys[i]]);
+    const geom=new THREE.BufferGeometry();
+    const arr=new Float32Array(pos.length*3);
+    pos.forEach((p,i)=>{arr[i*3]=p[0];arr[i*3+1]=p[1];arr[i*3+2]=p[2]});
+    geom.setAttribute('position',new THREE.BufferAttribute(arr,3));
+    points=new THREE.Points(geom,new THREE.PointsMaterial({color:0x2dd4bf,size:0.05,transparent:true,opacity:0.92,blending:THREE.AdditiveBlending}));
+    scene.add(points);
+    const lmat=new THREE.LineBasicMaterial({color:0x22d3ee,transparent:true,opacity:0.16});
+    const d=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+    const larr=[];
+    pos.forEach((p,i)=>{
+      const near=pos.map((q,j)=>({j,d:d(p,q)})).filter(o=>o.j!==i).sort((a,b)=>a.d-b.d).slice(0,2);
+      near.forEach(o=>{larr.push(p[0],p[1],p[2],pos[o.j][0],pos[o.j][1],pos[o.j][2])});
+    });
+    const lgeom=new THREE.BufferGeometry();
+    lgeom.setAttribute('position',new THREE.BufferAttribute(new Float32Array(larr),3));
+    lines=new THREE.LineSegments(lgeom,lmat);
+    scene.add(lines);
+    const gCv=document.createElement('canvas');gCv.width=gCv.height=128;
+    const gx=gCv.getContext('2d');const grad=gx.createRadialGradient(64,64,4,64,64,60);
+    grad.addColorStop(0,'rgba(45,212,191,0.9)');grad.addColorStop(1,'rgba(45,212,191,0)');
+    gx.fillStyle=grad;gx.fillRect(0,0,128,128);
+    gs=new THREE.Sprite(new THREE.SpriteMaterial({color:0x2dd4bf,transparent:true,opacity:0.14,map:new THREE.CanvasTexture(gCv)}));
+    gs.scale.set(8,8,1);scene.add(gs);
+  }catch(e){console.error('intro 3d failed',e);intro.style.display='none';return}
+
+  let start=performance.now(),done=false;
+  function dismiss(){
+    if(done)return;done=true;intro.classList.add('hide');
+    setTimeout(()=>{intro.style.display='none';if(renderer)renderer.dispose()},700);
+  }
+  function tick(now){
+    const t=(now-start)/1000;
+    if(!done){
+      points.rotation.y=t*0.24;points.rotation.x=Math.sin(t*0.4)*0.1;
+      lines.rotation.copy(points.rotation);
+      gs.material.opacity=0.1+0.03*Math.sin(t*1.2);
+      camera.position.z=5.5+Math.sin(t*0.6)*0.5;
+    }
+    renderer.render(scene,camera);
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  const auto=setTimeout(dismiss,3200);
+  intro.addEventListener('click',()=>{clearTimeout(auto);dismiss()});
+})();
+
+</script>
+</body>
+</html>
