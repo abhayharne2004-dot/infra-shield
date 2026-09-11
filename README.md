@@ -64,6 +64,30 @@ InfraShield builds a live graph of the city network and reasons about risk quant
 
 ---
 
+## Getting Started
+
+```bash
+# 1. Clone
+git clone https://github.com/abhayharne2004-dot/infra-shield.git
+cd infra-shield
+
+# 2. Install dependencies (Python 3.10+)
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# 3. Run
+python server.py
+```
+
+Then open **http://localhost:8000** in your browser.
+
+- **First boot:** fetches the Nagpur road network from OpenStreetMap and weather/elevation/population data live — takes a few minutes. Results are cached to `pipeline_cache.json` on disk, so subsequent boots are near-instant.
+- **No population raster?** The server falls back gracefully (population-weighted impact shows zeros, everything else works). To get population data, download the WorldPop India GeoTIFF to `data/worldpop_ind_2020.tif`.
+- Rasterio can be finicky to install — on some systems `pip install rasterio[all]` or `apt install gdal-bin` helps. It's only used for the optional population layer; the rest of the app runs without it.
+
+---
+
 ## Project Structure
 
 ```
